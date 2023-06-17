@@ -1,0 +1,143 @@
+﻿@page "/"
+@using Telegram.Bot
+@inject IConfiguration Configuration
+
+<PageTitle>Index</PageTitle>
+
+<h1>Hello, Telegram!</h1>
+
+@if (botInfo is not null)
+{
+    <h2>@botInfo.Username is connected!</h2>
+}
+<hr />
+
+@if (messageSent is not null)
+{
+    <div class="alert alert-success">
+        Message sent correctly on @messageSent.Date.ToString()
+    </div>
+}
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="alert alert-danger">
+        @errorMessage
+    </div>
+}
+
+<EditForm Model="model" OnValidSubmit="SendMessageAsync">
+    <div class="mb-3">
+        <label>Message format</label>
+        <InputSelect @bind-Value="model.MessageFormat" class="form-control">
+            @foreach (var type in Enum.GetValues<MessageFormatType>())
+            {
+                <option value="@type">@type</option>
+            }
+        </InputSelect>
+    </div>
+
+    <div class="mb-3">
+        <label>Message</label>
+        <InputTextArea @bind-Value="model.Message" class="form-control" />
+    </div>
+
+    <div class="mb-3">
+        <label>Image</label>
+        <InputFile OnChange="FileSelected" />
+        @if (selectedFile is not null)
+        {
+            <button type="button" class="btn btn-secondary" @onclick="SendPictureAsync">Send picture</button>
+        }
+    </div>
+
+    <div class="mb-3">
+        <button type="submit" class="btn btn-primary btn-lg">SEND</button>
+    </div>
+</EditForm>
+
+
+@code {
+    private TelegramBotClient client;
+
+    private ViewModel model = new();
+
+    private IBrowserFile? selectedFile;
+
+    private Telegram.Bot.Types.User? botInfo;
+
+    private Telegram.Bot.Types.Message? messageSent;
+
+    private string? errorMessage;
+
+    private string chatId = "-1001571362814";
+
+    protected override async Task OnInitializedAsync()
+    {
+        client = new TelegramBotClient(Configuration["TelegramBotToken"]!);
+
+        botInfo = await client.GetMeAsync();
+
+    }
+
+    private void FileSelected(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+    }
+
+    private async Task SendMessageAsync()
+    {
+        try
+        {
+            errorMessage = null;
+
+            var parseMode = model.MessageFormat switch
+            {
+                MessageFormatType.Html => Telegram.Bot.Types.Enums.ParseMode.Html,
+                _ => Telegram.Bot.Types.Enums.ParseMode.MarkdownV2
+            };
+
+            messageSent = await client.SendTextMessageAsync(
+                chatId,
+                model.Message,
+                parseMode: parseMode);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task SendPictureAsync()
+    {
+        if (selectedFile is not null)
+        {
+            using var fileStream = selectedFile.OpenReadStream();
+            var file = Telegram.Bot.Types.InputFile.FromStream(fileStream);
+
+            try
+            {
+                await client.SendPhotoAsync(
+                    chatId,
+                    file);
+            }
+            catch (Exception ex)
+            {
+                errorMessage = ex.Message;
+            }
+        }
+    }
+
+    class ViewModel
+    {
+        public MessageFormatType MessageFormat { get; set; } = MessageFormatType.Markdown;
+
+        [System.ComponentModel.DataAnnotations.Required]
+        public string Message { get; set; } = string.Empty;
+    }
+
+    enum MessageFormatType
+    {
+        Markdown,
+        Html
+    }
+}
