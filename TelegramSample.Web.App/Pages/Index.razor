@@ -1,6 +1,8 @@
 ﻿@page "/"
 @using Telegram.Bot
+@using Azure.Storage.Queues
 @inject IConfiguration Configuration
+@inject HttpClient Http 
 
 <PageTitle>Index</PageTitle>
 
@@ -59,13 +61,15 @@
 @code {
     private TelegramBotClient client;
 
+    private QueueClient queueClient;
+
     private ViewModel model = new();
 
     private IBrowserFile? selectedFile;
 
     private Telegram.Bot.Types.User? botInfo;
 
-    private Telegram.Bot.Types.Message? messageSent;
+    private MessageSendResponse? messageSent;
 
     private string? errorMessage;
 
@@ -75,7 +79,21 @@
     {
         client = new TelegramBotClient(Configuration["TelegramBotToken"]!);
 
+        queueClient = new QueueClient(
+            "UseDevelopmentStorage=true",
+            "messages",
+            new QueueClientOptions { MessageEncoding = QueueMessageEncoding.Base64 });
+
+        await queueClient.CreateIfNotExistsAsync();
+
         botInfo = await client.GetMeAsync();
+
+        /*
+        var client = new QueueClient(
+    "UseDevelopmentStorage=true",
+    "registered-books",
+    new QueueClientOptions { MessageEncoding = QueueMessageEncoding.Base64 });
+        */
 
     }
 
@@ -90,16 +108,31 @@
         {
             errorMessage = null;
 
-            var parseMode = model.MessageFormat switch
+            var data = new BinaryData(new
             {
-                MessageFormatType.Html => Telegram.Bot.Types.Enums.ParseMode.Html,
-                _ => Telegram.Bot.Types.Enums.ParseMode.MarkdownV2
-            };
+                ChatId = chatId,
+                Message = model.Message
+            });
 
-            messageSent = await client.SendTextMessageAsync(
-                chatId,
-                model.Message,
-                parseMode: parseMode);
+            await queueClient.SendMessageAsync(data);
+
+            //var response = await Http.PostAsJsonAsync(
+            //    "api/send",
+            //    new { chatId = chatId, message = model.Message });
+
+            //response.EnsureSuccessStatusCode();
+            //messageSent = await response.Content.ReadFromJsonAsync<MessageSendResponse>();
+
+            //var parseMode = model.MessageFormat switch
+            //{
+            //    MessageFormatType.Html => Telegram.Bot.Types.Enums.ParseMode.Html,
+            //    _ => Telegram.Bot.Types.Enums.ParseMode.MarkdownV2
+            //};
+
+            //messageSent = await client.SendTextMessageAsync(
+            //    chatId,
+            //    model.Message,
+            //    parseMode: parseMode);
         }
         catch (Exception ex)
         {
@@ -140,4 +173,6 @@
         Markdown,
         Html
     }
+
+    record MessageSendResponse(DateTime Date);
 }
